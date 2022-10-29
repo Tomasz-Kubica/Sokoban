@@ -1,20 +1,33 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Use infix" #-}
+
 import CodeWorld
+
+-----------
+-- Types --
+-----------
+
 type Program = IO ()
 
-main :: Program
-main = drawingOf pictureOfMaze
+data Tile = Wall | Ground | Storage | Box | Blank deriving Eq
+data Direction = R | U | L | D deriving Eq
+data Coord = C Int Int
+
+type Maze = Coord -> Tile
+
+data State = S {
+  stPlayerPos :: Coord,
+  stPlayerDir :: Direction,
+  stMap       :: Maze
+}
+
+---------------
+-- Constants --
+---------------
 
 tileSize :: Double
 tileSize = 1
-
-drawTile :: Int -> Picture
-drawTile x
-  | x == 1    = wall
-  | x == 2    = ground
-  | x == 3    = storage
-  | x == 4    = box
-  | otherwise = blank
 
 solidTile = solidRectangle tileSize tileSize
 wall = colored brown solidTile
@@ -24,17 +37,62 @@ boxLines = polyline [(-tileSize / 2, -tileSize / 2), (tileSize / 2, tileSize / 2
            & polyline [(-tileSize / 2, tileSize / 2), (tileSize / 2, -tileSize / 2)]
            & rectangle tileSize tileSize
 box = boxLines & colored orange solidTile
+player = colored green (solidPolygon [
+    (-tileSize / 3, -tileSize / 2), 
+    (tileSize / 3, -tileSize / 2), 
+    (0, tileSize / 2)
+  ])
 
-type Maze = Int -> Int -> Int
+---------------
+-- Functions --
+---------------
+
+-- Main
+main :: Program
+main = resettableActivityOf (S (C 0 (-1)) U maze) handleEvent drawFromState
+
+-- Utility
+resettableActivityOf ::
+    world ->
+    (Event -> world -> world) ->
+    (world -> Picture) ->
+    IO ()
+resettableActivityOf world eventHandler = activityOf world newEventHandler
+  where
+    newEventHandler (KeyPress "Esc") _ = world
+    newEventHandler e w = eventHandler e w
+
+atCoord :: Coord -> Picture -> Picture
+atCoord (C x y) = translated 
+  (fromIntegral x * tileSize) 
+  (fromIntegral y * tileSize)
+
+adjacentCoord :: Direction -> Coord -> Coord
+adjacentCoord R (C x y) = C (x + 1) y
+adjacentCoord L (C x y) = C (x - 1) y
+adjacentCoord U (C x y) = C x (y + 1)
+adjacentCoord D (C x y) = C x (y - 1)
+
+moveCoords :: [Direction] -> Coord -> Coord
+moveCoords [] coord = coord
+moveCoords (h:t) coord = adjacentCoord h coord
+
+-- Drawing level
+drawTile :: Tile -> Picture
+drawTile Wall    = wall
+drawTile Ground  = ground
+drawTile Storage = storage
+drawTile Box     = box
+drawTile Blank   = blank
 
 maze :: Maze
-maze x y
-  | abs x > 4  || abs y > 4  = 0  -- blank
-  | abs x == 4 || abs y == 4 = 1  -- wall
-  | x ==  2 && y <= 0        = 1  -- wall
-  | x ==  3 && y <= 0        = 3  -- storage
-  | x >= -2 && y == 0        = 4  -- box
-  | otherwise                = 2  -- ground
+maze (C x y)
+  | abs x > 4  || abs y > 4  = Blank
+  | abs x == 4 || abs y == 4 = Wall
+  | x ==  2 && y <= 0        = Wall
+  | x ==  3 && y <= 0        = Storage
+  | x >= -2 && y == 0        = Box
+  | otherwise                = Ground
 
 
 drawMaze :: Maze -> Int -> Int -> Int -> Int -> Picture
@@ -53,9 +111,44 @@ drawMazeAux maze x1 y1 x2 y2
 drawMazeLine :: Maze -> Int -> Int -> Int -> Picture
 drawMazeLine maze x l y
   | x > l     = blank
-  | otherwise = drawTile (maze x y)
+  | otherwise = drawTile (maze (C x y))
                 & translated tileSize 0 (drawMazeLine maze (x + 1) l y)
 
+angleFromDirection :: Direction -> Double
+angleFromDirection dir
+  | dir == U = 0
+  | dir == L = rightAngle
+  | dir == D = rightAngle * 2
+  | dir == R = rightAngle * 3
+    where
+      rightAngle = 1.5707963268
 
-pictureOfMaze :: Picture
-pictureOfMaze = drawMaze maze (-10) (-10) 10 10
+drawPlayer :: State -> Picture
+drawPlayer state = atCoord pos (rotated (angleFromDirection dir) player)
+  where
+    pos = stPlayerPos state
+    dir = stPlayerDir state
+
+-- Game
+drawFromState :: State -> Picture
+drawFromState state = drawPlayer state & drawMaze (stMap state) (-10) (-10) 10 10
+
+isKeyDirection key = elem key ["Up", "Down", "Right", "Left"]
+
+directionFromKey key
+  | key == "Up"    = U
+  | key == "Down"  = D
+  | key == "Right" = R
+  | key == "Left"  = L
+
+isPlayerOnFreeField :: State -> Bool
+isPlayerOnFreeField state = elem (stMap state (stPlayerPos state)) [Ground, Storage]
+
+handleEvent :: Event -> State -> State
+handleEvent (KeyPress key) s
+  | isKeyDirection key = if isPlayerOnFreeField newS then newS else s
+    where 
+      newS = s {stPlayerPos = adjacentCoord dir (stPlayerPos s), stPlayerDir = dir}
+        where 
+          dir = directionFromKey key
+handleEvent _ s = s
