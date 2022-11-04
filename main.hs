@@ -22,6 +22,14 @@ data State = S {
   stMap       :: Maze
 }
 
+data SSState world = StartScreen | Running world
+
+data Activity world = Activity {
+  actState  :: world,
+  actHandle :: Event -> world -> world,
+  actDraw   :: world -> Picture
+}
+
 ---------------
 -- Constants --
 ---------------
@@ -48,20 +56,39 @@ player = colored green (solidPolygon [
 ---------------
 
 -- Main
+mainActivity = resettableActivityOf 
+  (startScreenActivityOf 
+    (Activity (S (C 0 (-1)) U maze) handleEvent drawFromState)
+  )
+  
 main :: Program
-main = resettableActivityOf (S (C 0 (-1)) U maze) handleEvent drawFromState
+main = runActivity mainActivity
 
--- Utility
-resettableActivityOf ::
-    world ->
-    (Event -> world -> world) ->
-    (world -> Picture) ->
-    IO ()
-resettableActivityOf world eventHandler = activityOf world newEventHandler
+-- Activity
+resettableActivityOf :: Activity s -> Activity s
+resettableActivityOf (Activity world eventHandler draw) 
+  = Activity world newEventHandler draw
   where
     newEventHandler (KeyPress "Esc") _ = world
     newEventHandler e w = eventHandler e w
 
+startScreenActivityOf :: Activity s -> Activity (SSState s)
+startScreenActivityOf (Activity state0 handle draw)
+  = Activity state0' handle' draw'
+  where
+    state0' = StartScreen
+
+    handle' (KeyPress " ") StartScreen = Running state0
+    handle' _              StartScreen = StartScreen
+    handle' e              (Running s) = Running (handle e s)
+
+    draw' StartScreen = startScreen
+    draw' (Running s) = draw s
+
+runActivity :: Activity s -> IO ()
+runActivity (Activity world handle draw) = activityOf world handle draw
+
+-- Utility
 atCoord :: Coord -> Picture -> Picture
 atCoord (C x y) = translated 
   (fromIntegral x * tileSize) 
@@ -128,6 +155,10 @@ drawPlayer state = atCoord pos (rotated (angleFromDirection dir) player)
   where
     pos = stPlayerPos state
     dir = stPlayerDir state
+
+-- Start screen
+startScreen :: Picture
+startScreen = scaled 3 3 (lettering "Sokoban!")
 
 -- Game
 drawFromState :: State -> Picture
