@@ -12,14 +12,15 @@ type Program = IO ()
 
 data Tile = Wall | Ground | Storage | Box | Blank deriving Eq
 data Direction = R | U | L | D deriving Eq
-data Coord = C Int Int
+data Coord = C Int Int deriving Eq
 
 type Maze = Coord -> Tile
 
 data State = S {
   stPlayerPos :: Coord,
   stPlayerDir :: Direction,
-  stMap       :: Maze
+  stMap       :: Maze,
+  stBoxes     :: [Coord]
 }
 
 data SSState world = StartScreen | Running world
@@ -58,8 +59,14 @@ player = colored green (solidPolygon [
 -- Main
 mainActivity = resettableActivityOf 
   (startScreenActivityOf 
-    (Activity (S (C 0 (-1)) U maze) handleEvent drawFromState)
+    (Activity startingState handleEvent drawFromState)
   )
+  where
+    startingState = S startPoss startDir mazeWithoutBoxes startBoxes
+    startBoxes = getBoxes (C (-10) (-10)) (C 10 10) maze
+    mazeWithoutBoxes = removeBoxes maze
+    startPoss = C 0 (-1)
+    startDir = U
   
 main :: Program
 main = runActivity mainActivity
@@ -103,6 +110,32 @@ adjacentCoord D (C x y) = C x (y - 1)
 moveCoords :: [Direction] -> Coord -> Coord
 moveCoords [] coord = coord
 moveCoords (h:t) coord = adjacentCoord h coord
+
+getBoxes :: Coord -> Coord -> Maze -> [Coord]
+getBoxes (C x1 y1) (C x2 y2) maze
+  | y1 > y2   = []
+  | otherwise = 
+    getBoxesInLine x1 x2 y1 maze ++ getBoxes (C x1 (y1 + 1)) (C x2 y2) maze
+
+getBoxesInLine :: Int -> Int -> Int -> Maze -> [Coord]
+getBoxesInLine x1 x2 y maze
+  | x1 > x2   = []
+  | otherwise = if maze c == Box then c:otherBoxes else otherBoxes
+  where
+    otherBoxes = getBoxesInLine (x1 + 1) x2 y maze
+    c = C x1 y
+
+removeBoxes :: Maze -> Maze
+removeBoxes maze = boxToGround . maze
+  where
+    boxToGround t = if t == Box then Ground else t
+
+addBoxes :: [Coord] -> Maze -> Maze
+addBoxes boxes maze c = if elem c boxes then Box else maze c
+
+allUnique :: (Eq a) => [a] -> Bool
+allUnique [] = True
+allUnique (h:t) = (not (elem h t)) && (allUnique t)
 
 -- Drawing level
 drawTile :: Tile -> Picture
@@ -162,7 +195,13 @@ startScreen = scaled 3 3 (lettering "Sokoban!")
 
 -- Game
 drawFromState :: State -> Picture
-drawFromState state = drawPlayer state & drawMaze (stMap state) (-10) (-10) 10 10
+drawFromState state
+  | isWinning state = scaled 3 3 (lettering "You won!")
+drawFromState state = player & map
+  where
+    player = drawPlayer state 
+    map = drawMaze drawWithBoxes (-10) (-10) 10 10
+    drawWithBoxes = addBoxes (stBoxes state) (stMap state)
 
 isKeyDirection key = elem key ["Up", "Down", "Right", "Left"]
 
@@ -172,14 +211,43 @@ directionFromKey key
   | key == "Right" = R
   | key == "Left"  = L
 
+isFiledFree :: Maze -> Coord -> Bool
+isFiledFree maze c = elem (maze c) freeFieldsTypes
+  where
+    freeFieldsTypes = [Ground, Storage]
+
 isPlayerOnFreeField :: State -> Bool
-isPlayerOnFreeField state = elem (stMap state (stPlayerPos state)) [Ground, Storage]
+isPlayerOnFreeField state =  isFiledFree (stMap state) (stPlayerPos state)
+
+moveBox :: Coord -> Direction -> Coord -> Coord
+moveBox cord dir box = if cord == box then adjacentCoord dir box else box
+
+areBoxesOk :: State -> Bool
+areBoxesOk state = allUnique boxes && all (isFiledFree (stMap state)) boxes
+  where
+    boxes = stBoxes state
+
+isWinning :: State -> Bool
+isWinning state = all isStorage boxes
+  where
+    boxes = stBoxes state
+    map = stMap state
+    isStorage c = map c == Storage
 
 handleEvent :: Event -> State -> State
+handleEvent _ s
+  | isWinning s = s
 handleEvent (KeyPress key) s
-  | isKeyDirection key = if isPlayerOnFreeField newS then newS else s
+  | isKeyDirection key = if playerOk && boxesOk then newS else s
     where 
-      newS = s {stPlayerPos = adjacentCoord dir (stPlayerPos s), stPlayerDir = dir}
-        where 
-          dir = directionFromKey key
+      newS = s {
+        stPlayerPos = newPlayerPos,
+        stPlayerDir = dir,
+        stBoxes = map (moveBox newPlayerPos dir) (stBoxes s)
+      }
+      dir = directionFromKey key
+      newPlayerPos = adjacentCoord dir (stPlayerPos s)
+
+      playerOk = isPlayerOnFreeField newS
+      boxesOk = areBoxesOk newS
 handleEvent _ s = s
