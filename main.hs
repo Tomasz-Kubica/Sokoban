@@ -3,6 +3,7 @@
 {-# HLINT ignore "Use infix" #-}
 
 import CodeWorld
+import qualified Data.Text as T
 
 -----------
 -- Types --
@@ -23,11 +24,13 @@ data Map = Map {
 }
 
 data State = S {
-  stPlayerPos :: Coord,
-  stPlayerDir :: Direction,
-  stMap       :: Maze,
-  stBoxes     :: [Coord],
-  stMovesNo   :: Int
+  stPlayerPos  :: Coord,
+  stPlayerDir  :: Direction,
+  stMap        :: Maze,
+  stBoxes      :: [Coord],
+  stMovesNo    :: Int,
+  stMaps       :: [Map],
+  stCurrentMap :: Int
 }
 
 data SSState world = StartScreen | Running world
@@ -48,6 +51,8 @@ tileSize = 1
 
 maxMapLL = C (-10) (-10)
 maxMapRU = C 10 10
+
+standardMapRadius = 8
 
 solidTile = solidRectangle tileSize tileSize
 wall = colored brown solidTile
@@ -71,11 +76,7 @@ player = colored green (solidPolygon [
 mainActivity = resettable (withStartScreen (withUndo activity))
   where
     activity = Activity startingState handleEvent drawFromState
-    startingState = S startPoss startDir mazeWithoutBoxes startBoxes 0
-    startBoxes = getBoxes (C (-10) (-10)) (C 10 10) maze
-    mazeWithoutBoxes = removeBoxes maze
-    startPoss = C 0 (-1)
-    startDir = U
+    startingState = createStartState allMaps
   
 main :: Program
 main = runActivity mainActivity
@@ -132,13 +133,13 @@ elemList a = foldList (\x r -> x == a || r) False
 appendList :: [a] -> [a] -> [a]
 appendList l1 l2 = foldRList (:) l2 l1
 
-listLength :: [a] -> Integer
+listLength :: [a] -> Int
 listLength = foldList (\_ n -> n + 1) 0
 
 filterList :: (a -> Bool) -> [a] -> [a]
 filterList f = foldRList (\x l -> if f x then x:l else l) []
 
-nth :: [a] -> Integer -> a
+nth :: [a] -> Int -> a
 nth (h:t) 0 = h
 nth (h:t) n = nth t (n - 1)
 
@@ -234,48 +235,9 @@ allReachable vs initial neighbours = allList f vs
 
 mazes :: [Maze]
 mazes = [maze, maze2, maze3]
-  where
-    map1 = Map maze (C 0 (-1)) U
+maps :: [Map]
+maps = [map1, map2, map3]
 
-    maze2 (C x y)
-      | ax > 3 || ay > 5                 = Blank
-      | ax == 3 || ay == 5               = Wall
-      | max ax ay == 1 && min ax ay == 0 = Box
-      | ax == 2 && ay == 4               = Storage
-      | otherwise                        = Ground 
-        where
-          ax = abs x
-          ay = abs y
-    map2 = Map maze2 (C 0 0) U
-
-    maze3 (C x y)
-      | ax > 4 || ay > 5                 = Blank
-      | ax == 4 || ay == 5               = Wall
-      | max ax ay == 1 && min ax ay == 0 = Storage
-      | ax == 2 && ay == 4               = Box
-      | otherwise                        = Ground 
-        where
-          ax = abs x
-          ay = abs y
-    map3 = Map maze3 (C 0 0) U
-
-badMazes :: [Maze]
-badMazes = [bad1, bad2]
-  where
-    bad1 (C x y)
-      | x == 0 && y == 0         = Storage
-      | max (abs x) (abs y) <= 3 = Ground
-      | otherwise                = Blank
-
-    bad2 (C x y)
-      | x == 0 && y == 0         = Storage
-      | max (abs x) (abs y) <= 3 = Ground
-      | otherwise                = Blank
-
-allMazes :: [Maze]
-allMazes = appendList mazes badMazes
-
-maze :: Maze
 maze (C x y)
   | abs x > 4  || abs y > 4  = Blank
   | abs x == 4 || abs y == 4 = Wall
@@ -283,15 +245,68 @@ maze (C x y)
   | x ==  3 && y <= 0        = Storage
   | x >= -2 && y == 0        = Box
   | otherwise                = Ground
--- maze (C x y)
---   | ax > 3 || ay > 5                 = Blank
---   | ax == 3 || ay == 5               = Wall
---   | max ax ay == 1 && min ax ay == 0 = Box
---   | ax == 2 && ay == 4               = Storage
---   | otherwise                        = Ground 
---     where
---       ax = abs x
---       ay = abs y
+map1 = Map maze (C 0 (-1)) U
+
+maze2 (C x y)
+  | ax > 3 || ay > 5                 = Blank
+  | ax == 3 || ay == 5               = Wall
+  | max ax ay == 1 && min ax ay == 0 = Box
+  | ax == 2 && ay == 4               = Storage
+  | otherwise                        = Ground 
+    where
+      ax = abs x
+      ay = abs y
+map2 = Map maze2 (C 0 0) U
+
+maze3 (C x y)
+  | ax > 4 || ay > 6                 = Blank
+  | ax == 4 || ay == 6               = Wall
+  | max ax ay == 1 && min ax ay == 0 = Storage
+  | ax == 2 && ay == 4               = Box
+  | otherwise                        = Ground 
+    where
+      ax = abs x
+      ay = abs y
+map3 = Map maze3 (C 0 0) U
+
+badMazes :: [Maze]
+badMazes = [badMaze1, badMaze2, badMaze3]
+badMaps :: [Map]
+badMaps = [badMap1, badMap2, badMap3]
+
+
+badMaze1 (C x y) -- Not closed
+  | x == 0 && y == 0         = Storage
+  | x == 2 && y == -1        = Box
+  | max (abs x) (abs y) <= 3 = Ground
+  | otherwise                = Blank
+badMap1 = Map badMaze1 (C 0 0) U
+
+badMaze2 (C x y) -- Boxes and storage separated
+  | x == 0 && y == 0         = Box
+  | x == 1 && y == 1         = Storage
+  | max (abs x) (abs y) == 1 = Ground
+  | max (abs x) (abs y) == 2 = Wall
+  | max (abs x) (abs y) == 3 = Ground
+  | max (abs x) (abs y) == 4 = Box
+  | max (abs x) (abs y) == 5 = Ground
+  | max (abs x) (abs y) == 6 = Wall
+  | otherwise                = Blank
+badMap2 = Map badMaze2 (C 0 (-1)) U
+
+badMaze3 (C x y) -- Less storage then boxes
+  | x == 0 && y == 1         = Storage
+  | x == -1 && y == 0        = Box
+  | x == 1 && y == 0         = Box
+  | max (abs x) (abs y) <= 3 = Ground
+  | max (abs x) (abs y) == 4 = Wall
+  | otherwise                = Blank
+badMap3 = Map badMaze3 (C 0 0) U
+
+allMazes :: [Maze]
+allMazes = appendList mazes badMazes
+allMaps :: [Map]
+allMaps = appendList maps badMaps
 
 -- Verify levels
 
@@ -304,23 +319,29 @@ adjacentWalkable m c = filterList walkable all
 isClosed :: Maze -> Bool
 isClosed m = allList checkInitial initial
   where
-    initial = getTiles Storage maxMapLL maxMapRU m
+    initial = appendList storages grounds
+    storages = getTiles Storage maxMapLL maxMapRU m
+    grounds = getTiles Ground maxMapLL maxMapRU m
     checkInitial init = isGraphClosed init (adjacentWalkable m) isOk
     isOk c = m c /= Blank
 
 isSane :: Maze -> Bool
-isSane m = storagesNo >= boxesNo
+isSane m = allList compareReachable initials
   where
-    initial = nth storages 0
-    reach c = reachable c initial (adjacentWalkable m)
+    getT t = getTiles t maxMapLL maxMapRU m
+    storages = getT Storage
+    boxes = getT Box
+    grounds = getT Ground
+    initials = foldList appendList [] [storages, boxes, grounds]
+    compareReachable initial = storagesNo >= boxesNo
+      where
+        reach c = reachable c initial (adjacentWalkable m)
 
-    storages = getTiles Storage maxMapLL maxMapRU m
-    reachableStorages = filterList reach storages
-    storagesNo = listLength reachableStorages
+        reachableStorages = filterList reach storages
+        storagesNo = listLength reachableStorages
 
-    boxes = getTiles Box maxMapLL maxMapRU m
-    reachableBoxes = filterList reach boxes
-    boxesNo = listLength reachableBoxes
+        reachableBoxes = filterList reach boxes
+        boxesNo = listLength reachableBoxes
 
 isCorrect :: Maze -> Bool
 isCorrect m = isClosed m  && isSane m
@@ -396,12 +417,37 @@ pictureOfBools xs = translated (-fromIntegral k /2) (fromIntegral k) (go 0 xs)
 -- Game
 drawFromState :: State -> Picture
 drawFromState state
-  | isWinning state = scaled 3 3 (lettering "You won!")
-drawFromState state = player & map
+  | isWinning state = scaled 2 2 (lettering "Level completed!") & translated 0 (-5) (lettering text)
+    where
+      movesNo = stMovesNo state
+      movesText = "Moves: "
+      textChars = movesText ++ show movesNo
+      text = T.pack textChars
+drawFromState state = scaledMap
   where
+    scaledMap = scaled scale scale unscaledMap
+
+    scale = standardMapRadius / fromIntegral maxXY
+    (C x1 y1) = maxMapLL
+    (C x2 y2) = maxMapRU
+    arrX = [x1..x2]
+    arrY = [y1..y2]
+    getMax x y (oldX, oldY)
+      | maze (C x y) /= Blank = (x', y')
+      | otherwise = (oldX, oldY)
+      where
+        x' = max (abs x) oldX
+        y' = max (abs y) oldY
+    maxes = mapList (\x -> foldList (getMax x) (0, 0) arrY) arrX
+    (maxX, maxY) = foldList (\(x, y) z -> getMax x y z) (0, 0) maxes
+    maxXY = max maxX maxY
+
+    unscaledMap = player & map
     player = drawPlayer state 
     map = drawMaze drawWithBoxes (-10) (-10) 10 10
-    drawWithBoxes = addBoxes (stBoxes state) (stMap state)
+    drawWithBoxes = addBoxes (stBoxes state) maze
+
+    maze = stMap state
 
 isKeyDirection key = elem key ["Up", "Down", "Right", "Left"]
 
@@ -428,16 +474,34 @@ areBoxesOk state = allUnique boxes && all (isFiledFree (stMap state)) boxes
     boxes = stBoxes state
 
 isWinning :: State -> Bool
-isWinning state = all isStorage boxes
+isWinning state = all isBoxOk boxes
   where
     boxes = stBoxes state
     map = stMap state
     isStorage c = map c == Storage
+    playerPos = stPlayerPos state
+    adjacentWalkable c = filterList isGroundOrStorage all
+      where
+        all = allAdjacentCoord c
+        isGroundOrStorage x = tile == Ground || tile == Storage
+          where
+            tile = map x
+    reachableBox c = reachable c playerPos adjacentWalkable
+    isBoxOk c = not (reachableBox c) || isStorage c
+
+
+isLastMap :: State -> Bool
+isLastMap s = currentMapNo == totalMapsNo - 1
+  where
+    totalMapsNo = listLength (stMaps s)
+    currentMapNo = stCurrentMap s
 
 handleEvent :: Event -> State -> State
-handleEvent _ s
+handleEvent (KeyPress key) s
+  | isWinning s && key == " " && not (isLastMap s) = nexMapState s
   | isWinning s = s
 handleEvent (KeyPress key) s
+  | key == "N" && not (isLastMap s) = nexMapState s
   | isKeyDirection key = if playerOk && boxesOk then newS else s
     where 
       newS = s {
@@ -453,9 +517,46 @@ handleEvent (KeyPress key) s
       boxesOk = areBoxesOk newS
 handleEvent _ s = s
 
+selectMapState :: State -> Int -> State
+selectMapState s n = s {
+  stMap = mazeWithoutBoxes,
+  stPlayerPos = startPoss,
+  stPlayerDir = startDir,
+  stBoxes = startBoxes,
+  stCurrentMap = n,
+  stMovesNo = 0
+}
+  where
+    maps = stMaps s
+    map = nth maps n
+    maze = mapMaze map
+    startPoss = mapStartPos map
+    startDir = mapStartDir map
+
+    startBoxes = getBoxes maxMapLL maxMapRU maze
+    mazeWithoutBoxes = removeBoxes maze
+
+nexMapState :: State -> State
+nexMapState s = selectMapState s mapNo
+  where
+    mapNo = stCurrentMap s + 1
+
+createStartState :: [Map] -> State
+createStartState maps = selectMapState tempS 0
+  where
+    tempS = S (C 0 0) U (const Blank) [] 0 maps 0
+
 -- States equality
+
+equalResult :: Eq a => (b -> a) -> b -> b -> Bool
+equalResult f x y = f x == f y
+
 instance Eq State where
-  s1 == s2 = 
-    stPlayerPos s1 == stPlayerPos s2 &&
-    stPlayerDir s1 == stPlayerDir s2 &&
-    stBoxes s1 == stBoxes s2
+  s1 == s2 = andList comparisons
+    where
+      comparisons = [
+          equalResult stPlayerPos s1 s2,
+          equalResult stPlayerDir s1 s2,
+          equalResult stBoxes s1 s2,
+          equalResult stMovesNo s1 s2
+        ]
