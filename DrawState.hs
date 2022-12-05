@@ -4,22 +4,28 @@ import Types
 import Picture
 import GameLogic
 import Maps
+import Textures
 
 pictureFromMaze :: Maze -> Picture
 pictureFromMaze maze drawF = drawF'
   where
     drawF' c
-      | tile == Wall = '#'
-      | tile == Box = '$'
-      | tile == Storage = '.'
+      | tile == Wall = wallTexture
+      | tile == Box = boxTexture
+      | tile == BoxOnStorage = boxStorageTexture
+      | tile == Storage = storageTexture
+      | tile == Ground = groundTexture
       | otherwise = drawF c
       where
         tile = maze c
 
 drawPlayer :: State -> Picture
-drawPlayer state = pictureCharAt '@' pos 
+drawPlayer state
+  | underPlayer == Ground = pictureCharAt playerTexture pos
+  | underPlayer == Storage = pictureCharAt playerStorageTexture pos
   where
     pos = stPlayerPos state
+    underPlayer = stMap state pos
 
 drawFromState :: State -> Picture
 drawFromState state

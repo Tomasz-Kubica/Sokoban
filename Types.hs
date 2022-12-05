@@ -12,7 +12,7 @@ module Types (
 
 type Program = IO ()
 
-data Tile = Wall | Ground | Storage | Box | Blank deriving Eq
+data Tile = Wall | Ground | Storage | Box | BoxOnStorage | Blank deriving Eq
 data Direction = R | U | L | D deriving Eq
 data Coord = C Int Int deriving Eq
 

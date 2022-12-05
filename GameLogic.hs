@@ -1,5 +1,5 @@
 module GameLogic (
-  handleEvent, 
+  handleEvent,
   createStartState,
   isWinning,
   addBoxes
@@ -65,7 +65,7 @@ moveCoords (h:t) coord = adjacentCoord h coord
 getTiles :: Tile -> Coord -> Coord -> Maze -> [Coord]
 getTiles t (C x1 y1) (C x2 y2) maze
   | y1 > y2   = []
-  | otherwise = 
+  | otherwise =
     getTilesInLine t x1 x2 y1 maze ++ getTiles t (C x1 (y1 + 1)) (C x2 y2) maze
 
 getTilesInLine :: Tile -> Int -> Int -> Int -> Maze -> [Coord]
@@ -85,7 +85,10 @@ removeBoxes maze = boxToGround . maze
     boxToGround t = if t == Box then Ground else t
 
 addBoxes :: [Coord] -> Maze -> Maze
-addBoxes boxes maze c = if elem c boxes then Box else maze c
+addBoxes boxes maze c
+  | c `elem` boxes && maze c == Storage = BoxOnStorage
+  | c `elem` boxes = Box
+  | otherwise = maze c
 
 allUnique :: (Eq a) => [a] -> Bool
 allUnique [] = True
@@ -212,7 +215,7 @@ handleEvent (KeyPress key) s
 handleEvent (KeyPress key) s
   | key == "N" && not (isLastMap s) = nexMapState s
   | isKeyDirection key = if playerOk && boxesOk then newS else s
-    where 
+    where
       newS = s {
         stPlayerPos = newPlayerPos,
         stPlayerDir = dir,

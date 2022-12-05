@@ -2,7 +2,7 @@ module Picture (Picture, blank, (&), drawPicture, pictureCharAt, pictureFromStri
 
 import Types
 
-type DrawFun = Coord -> Char
+type DrawFun = Coord -> String
 type Picture = DrawFun -> DrawFun
 
 (&) :: Picture -> Picture -> Picture
@@ -11,14 +11,14 @@ type Picture = DrawFun -> DrawFun
 blank :: Picture
 blank = id
 
-pictureCharAt :: Char -> Coord -> Picture
+pictureCharAt :: String -> Coord -> Picture
 pictureCharAt char at oldDraw coord
   | coord == at = char
   | otherwise   = oldDraw coord
 
-pictureFromString :: [Char] -> Coord -> Picture
+pictureFromString :: String -> Coord -> Picture
 pictureFromString str (C startX startY) oldDraw (C x y)
-  | y == startY && x' >= 0 && x' < strLen = str !! x'
+  | y == startY && x' >= 0 && x' < strLen = [str !! x']
   | otherwise = oldDraw (C x y)
   where
     x' = x - startX
@@ -32,13 +32,13 @@ drawToScreen draw = aux maxX maxY
   where
     aux x y
       | y < minY  = []
-      | x > maxX  = '\n' : aux minX (y - 1)
+      | x > maxX  = "\n" : aux minX (y - 1)
       | otherwise = draw (C x y) : aux (x + 1) y
 
 
 drawPicture :: Picture -> Screen
-drawPicture picture = screen
+drawPicture picture = concat screen
   where
     screen = drawToScreen drawF
     drawF = picture empty
-    empty c = ' '
+    empty c = " "
